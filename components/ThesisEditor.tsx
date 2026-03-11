@@ -21,7 +21,7 @@ import TaskList from '@tiptap/extension-task-list';
 import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { useState, useEffect } from 'react';
-import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X } from 'lucide-react';
+import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X, ShieldAlert, Wand2, Quote } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { EditorToolbar } from './EditorToolbar';
 import { GoogleGenAI } from '@google/genai';
@@ -56,6 +56,9 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [isCheckingAcademic, setIsCheckingAcademic] = useState(false);
   const [isParaphrasing, setIsParaphrasing] = useState(false);
+  const [isCheckingPlagiarism, setIsCheckingPlagiarism] = useState(false);
+  const [isAutocompleting, setIsAutocompleting] = useState(false);
+  const [isGeneratingCitation, setIsGeneratingCitation] = useState(false);
   const [zoteroConnected, setZoteroConnected] = useState(false);
   const [mendeleyConnected, setMendeleyConnected] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('Standard Academic');
@@ -245,6 +248,201 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     }
   };
 
+  const expandText = async () => {
+    if (!editor) return;
+    
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select some text to expand.");
+      return;
+    }
+
+    setIsParaphrasing(true); // Reusing the loading state for simplicity
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const documentContent = editor.getText();
+      
+      const prompt = `Act as an academic writing assistant. Expand the following selected text, adding more detail, academic context, and depth. Maintain the original meaning but make it more comprehensive.\n\nSelected Text:\n${text}\n\nContext (for reference):\n${documentContent}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        editor.chain().focus().insertContent(response.text).run();
+      }
+    } catch (error) {
+      console.error('Failed to expand text:', error);
+      alert('Failed to expand text. Please try again.');
+    } finally {
+      setIsParaphrasing(false);
+    }
+  };
+
+  const shortenText = async () => {
+    if (!editor) return;
+    
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select some text to shorten.");
+      return;
+    }
+
+    setIsParaphrasing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      
+      const prompt = `Act as an academic writing assistant. Shorten and make the following text more concise and punchy, while retaining the core academic meaning.\n\nText:\n${text}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        editor.chain().focus().insertContent(response.text).run();
+      }
+    } catch (error) {
+      console.error('Failed to shorten text:', error);
+      alert('Failed to shorten text. Please try again.');
+    } finally {
+      setIsParaphrasing(false);
+    }
+  };
+
+  const summarizeText = async () => {
+    if (!editor) return;
+    
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select some text to summarize.");
+      return;
+    }
+
+    setIsParaphrasing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      
+      const prompt = `Act as an academic writing assistant. Provide a brief, one-sentence summary of the following text.\n\nText:\n${text}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        alert("Summary:\n\n" + response.text);
+      }
+    } catch (error) {
+      console.error('Failed to summarize text:', error);
+      alert('Failed to summarize text. Please try again.');
+    } finally {
+      setIsParaphrasing(false);
+    }
+  };
+
+  const checkPlagiarism = async () => {
+    if (!editor) return;
+
+    const selection = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    const textToCheck = selectedText || editor.getText();
+
+    if (!textToCheck.trim()) {
+      alert("Please add some text to check for plagiarism.");
+      return;
+    }
+
+    setIsCheckingPlagiarism(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+
+      const prompt = `Act as an academic plagiarism detection service. Analyze the following text for potential plagiarism. Use Google Search to check if these exact phrases or highly similar ones exist on the web. Provide a detailed plagiarism report including an estimated "Similarity Score" (percentage), highlight potentially plagiarized passages, and list the original source URLs.\n\nText to check:\n"${textToCheck}"`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        }
+      });
+
+      if (response.text) {
+        alert("Plagiarism Report:\n\n" + response.text);
+      }
+    } catch (error) {
+      console.error('Failed to check plagiarism:', error);
+      alert('Failed to check plagiarism. Please try again.');
+    } finally {
+      setIsCheckingPlagiarism(false);
+    }
+  };
+
+  const autocompleteText = async () => {
+    if (!editor) return;
+    
+    setIsAutocompleting(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const documentContent = editor.getText();
+      
+      const prompt = `Act as an AI writing assistant (like Jenni AI). Continue the following academic text naturally, maintaining the academic tone and context. Write about 2-3 sentences. Return ONLY the continuation text, do not repeat the existing text.\n\nText:\n${documentContent}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        editor.chain().focus().insertContent(' ' + response.text.trim()).run();
+      }
+    } catch (error) {
+      console.error('Failed to autocomplete:', error);
+      alert('Failed to autocomplete. Please try again.');
+    } finally {
+      setIsAutocompleting(false);
+    }
+  };
+
+  const generateCitation = async () => {
+    if (!editor) return;
+    
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select a claim or sentence to generate a citation for.");
+      return;
+    }
+
+    setIsGeneratingCitation(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      
+      const prompt = `Act as an academic research assistant. Find a real, credible academic source that supports or relates to the following claim. Return ONLY the citation in APA format, nothing else.\n\nClaim:\n${text}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        }
+      });
+
+      if (response.text) {
+        editor.chain().focus().insertContent(` (${response.text.trim()})`).run();
+      }
+    } catch (error) {
+      console.error('Failed to generate citation:', error);
+      alert('Failed to generate citation. Please try again.');
+    } finally {
+      setIsGeneratingCitation(false);
+    }
+  };
+
   const handleResearchQuery = async () => {
     if (!researchQuery.trim() || isResearching) return;
     
@@ -255,9 +453,22 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const documentContent = editor?.getText() || '';
+      
+      const prompt = `You are an AI Research Assistant helping a student write their thesis. 
+Here is the current content of their document for context:
+---
+${documentContent}
+---
+
+The user has asked the following question or request:
+"${userMessage.content}"
+
+Please provide a helpful, academic response. If they ask for sources, use the Google Search tool to find credible academic sources.`;
+
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
-        contents: userMessage.content,
+        contents: prompt,
         config: {
           tools: [{ googleSearch: {} }],
         }
@@ -350,6 +561,38 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     bibHtml += `</ul>`;
     
     editor.chain().focus().insertContentAt(editor.state.doc.content.size, bibHtml).run();
+  };
+
+  const exportDocument = () => {
+    if (!editor) return;
+    
+    const content = editor.getHTML();
+    const blob = new Blob([`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Exported Document</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+          h1, h2, h3 { color: #333; }
+          p { margin-bottom: 1em; }
+        </style>
+      </head>
+      <body>
+        ${content}
+      </body>
+      </html>
+    `], { type: 'text/html' });
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'thesis-export.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const togglePanel = (panel: 'ai' | 'citation' | 'research' | 'outline') => {
@@ -479,13 +722,23 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
               <button className="hidden sm:block p-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors" title="Share">
                 <Share2 className="w-5 h-5" />
               </button>
-              <button className="hidden sm:block p-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors" title="Download">
+              <button 
+                onClick={exportDocument}
+                className="hidden sm:block p-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors" 
+                title="Export Document"
+              >
                 <Download className="w-5 h-5" />
               </button>
             </div>
           </div>
           
-          <EditorToolbar editor={editor} />
+          <EditorToolbar 
+            editor={editor} 
+            onParaphrase={paraphraseSelection}
+            onExpand={expandText}
+            onShorten={shortenText}
+            isProcessing={isParaphrasing}
+          />
 
           {/* Editor Content */}
           <div className="flex-1 overflow-auto p-4 sm:p-8">
@@ -533,6 +786,42 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
                 <button onClick={() => setShowAiPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
               </div>
               <div className="flex-1 overflow-auto p-4 space-y-4">
+                {/* AI Autocomplete Tool */}
+                <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-blue-900 mb-1 flex items-center gap-2">
+                    <Wand2 className="w-4 h-4 text-blue-600" />
+                    AI Autocomplete
+                  </h3>
+                  <p className="text-xs text-blue-700/80 mb-3 leading-relaxed">
+                    Write with AI. Let the assistant continue your sentence or paragraph naturally.
+                  </p>
+                  <button 
+                    onClick={autocompleteText}
+                    disabled={isAutocompleting}
+                    className="w-full px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isAutocompleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Writing...</> : 'Continue Writing'}
+                  </button>
+                </div>
+
+                {/* AI Citation Generator Tool */}
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-purple-900 mb-1 flex items-center gap-2">
+                    <Quote className="w-4 h-4 text-purple-600" />
+                    Cite as you Write
+                  </h3>
+                  <p className="text-xs text-purple-700/80 mb-3 leading-relaxed">
+                    Select a claim in your text, and the AI will find and insert a relevant academic citation.
+                  </p>
+                  <button 
+                    onClick={generateCitation}
+                    disabled={isGeneratingCitation}
+                    className="w-full px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isGeneratingCitation ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding Source...</> : 'Generate Citation'}
+                  </button>
+                </div>
+
                 {/* Generate Abstract Tool */}
                 <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl p-4">
                   <h3 className="text-sm font-semibold text-indigo-900 mb-1 flex items-center gap-2">
@@ -594,17 +883,60 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
                   </button>
                 </div>
 
+                {/* Plagiarism Checker Tool */}
+                <div className="bg-gradient-to-br from-rose-50 to-red-50 border border-rose-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-rose-900 mb-1 flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-rose-600" />
+                    Plagiarism Check
+                  </h3>
+                  <p className="text-xs text-rose-700/80 mb-3 leading-relaxed">
+                    Scan your document or selected text against web sources to detect potential plagiarism.
+                  </p>
+                  <button 
+                    onClick={checkPlagiarism}
+                    disabled={isCheckingPlagiarism}
+                    className="w-full px-3 py-2 bg-rose-600 text-white text-sm font-medium rounded-lg hover:bg-rose-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isCheckingPlagiarism ? <><Loader2 className="w-4 h-4 animate-spin" /> Scanning...</> : 'Scan for Plagiarism'}
+                  </button>
+                </div>
+
                 {/* Paraphrase Tool */}
                 <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-sm">
-                  <h3 className="text-sm font-medium text-neutral-900 mb-2">Paraphrase Selection</h3>
-                  <p className="text-xs text-neutral-600 mb-3">Select text in the editor and click below to improve sentence structure.</p>
-                  <button 
-                    onClick={paraphraseSelection}
-                    disabled={isParaphrasing}
-                    className="w-full px-3 py-2 bg-white border border-neutral-300 text-neutral-700 text-sm font-medium rounded-lg hover:bg-neutral-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {isParaphrasing ? <><Loader2 className="w-4 h-4 animate-spin" /> Paraphrasing...</> : 'Paraphrase'}
-                  </button>
+                  <h3 className="text-sm font-medium text-neutral-900 mb-2">Edit Selection</h3>
+                  <p className="text-xs text-neutral-600 mb-3">Select text in the editor and choose an action to modify it.</p>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <button 
+                      onClick={paraphraseSelection}
+                      disabled={isParaphrasing}
+                      className="w-full px-2 py-1.5 bg-white border border-neutral-300 text-neutral-700 text-xs font-medium rounded-lg hover:bg-neutral-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                      {isParaphrasing ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Paraphrase
+                    </button>
+                    <button 
+                      onClick={summarizeText}
+                      disabled={isParaphrasing}
+                      className="w-full px-2 py-1.5 bg-white border border-neutral-300 text-neutral-700 text-xs font-medium rounded-lg hover:bg-neutral-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                      {isParaphrasing ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Summarize
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button 
+                      onClick={expandText}
+                      disabled={isParaphrasing}
+                      className="w-full px-2 py-1.5 bg-white border border-neutral-300 text-neutral-700 text-xs font-medium rounded-lg hover:bg-neutral-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                      {isParaphrasing ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Expand
+                    </button>
+                    <button 
+                      onClick={shortenText}
+                      disabled={isParaphrasing}
+                      className="w-full px-2 py-1.5 bg-white border border-neutral-300 text-neutral-700 text-xs font-medium rounded-lg hover:bg-neutral-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                      {isParaphrasing ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Shorten
+                    </button>
+                  </div>
                 </div>
 
                 {/* Grammar Suggestion */}

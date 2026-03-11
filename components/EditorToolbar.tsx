@@ -19,27 +19,38 @@ import {
   Quote, 
   Table as TableIcon,
   Link as LinkIcon,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Wand2,
+  Maximize2,
+  Minimize2,
+  Loader2
 } from 'lucide-react';
 
 interface EditorToolbarProps {
   editor: Editor | null;
+  onParaphrase?: () => void;
+  onExpand?: () => void;
+  onShorten?: () => void;
+  isProcessing?: boolean;
 }
 
 const ToolbarButton = ({ 
   onClick, 
   isActive = false, 
   disabled = false, 
-  children 
+  children,
+  title
 }: { 
   onClick: () => void; 
   isActive?: boolean; 
   disabled?: boolean; 
   children: React.ReactNode;
+  title?: string;
 }) => (
   <button
     onClick={onClick}
     disabled={disabled}
+    title={title}
     className={`p-2 rounded-lg transition-colors flex items-center justify-center
       ${isActive ? 'bg-indigo-100 text-indigo-700' : 'text-neutral-600 hover:bg-neutral-100'}
       ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
@@ -51,13 +62,40 @@ const ToolbarButton = ({
 
 const Divider = () => <div className="w-px h-6 bg-neutral-200 mx-1" />;
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
+export function EditorToolbar({ editor, onParaphrase, onExpand, onShorten, isProcessing }: EditorToolbarProps) {
   if (!editor) {
     return null;
   }
 
   return (
     <div className="flex items-center gap-1 p-2 bg-white border-b border-neutral-200 overflow-x-auto whitespace-nowrap scrollbar-hide">
+      {onParaphrase && (
+        <>
+          <ToolbarButton
+            onClick={onParaphrase || (() => {})}
+            disabled={isProcessing || editor.state.selection.empty}
+            title="Paraphrase Selection"
+          >
+            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> : <Wand2 className="w-4 h-4 text-indigo-600" />}
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={onExpand || (() => {})}
+            disabled={isProcessing || editor.state.selection.empty}
+            title="Expand Selection"
+          >
+            <Maximize2 className="w-4 h-4 text-indigo-600" />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={onShorten || (() => {})}
+            disabled={isProcessing || editor.state.selection.empty}
+            title="Shorten Selection"
+          >
+            <Minimize2 className="w-4 h-4 text-indigo-600" />
+          </ToolbarButton>
+          <Divider />
+        </>
+      )}
+
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBold().run()}
         disabled={!editor.can().chain().focus().toggleBold().run()}

@@ -28,7 +28,7 @@ export default function LandingPage() {
             Write your thesis <br className="hidden sm:block" /><span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">faster & better</span>
           </h1>
           <p className="text-lg sm:text-xl text-neutral-500 mb-8 sm:mb-10 max-w-2xl mx-auto leading-relaxed px-4 sm:px-0">
-            AI-powered academic writing platform tailored for Kenyan universities. Features real-time collaboration, automated citations, and intelligent feedback.
+            AI-powered academic writing platform tailored for students and researchers worldwide. Features real-time collaboration, automated citations, and intelligent feedback.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 px-4 sm:px-0">
             <Link href="/dashboard" className="w-full sm:w-auto bg-indigo-600 text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-full font-medium text-base sm:text-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-indigo-200">
@@ -52,8 +52,8 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
               {[
                 {
-                  title: 'University Templates',
-                  description: 'Pre-configured templates for Kenyatta, KEMU, MKU, and Laikipia universities.',
+                  title: 'Global University Templates',
+                  description: 'Pre-configured templates for top universities worldwide, including Harvard, Oxford, and MIT.',
                   icon: BookOpen,
                 },
                 {
