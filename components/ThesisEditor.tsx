@@ -1,0 +1,827 @@
+'use client';
+
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import CharacterCount from '@tiptap/extension-character-count';
+import Highlight from '@tiptap/extension-highlight';
+import Typography from '@tiptap/extension-typography';
+import Underline from '@tiptap/extension-underline';
+import Superscript from '@tiptap/extension-superscript';
+import Subscript from '@tiptap/extension-subscript';
+import TextAlign from '@tiptap/extension-text-align';
+import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import TaskItem from '@tiptap/extension-task-item';
+import TaskList from '@tiptap/extension-task-list';
+import Color from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { useState, useEffect } from 'react';
+import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X } from 'lucide-react';
+import { Group, Panel, Separator } from 'react-resizable-panels';
+import { EditorToolbar } from './EditorToolbar';
+import { GoogleGenAI } from '@google/genai';
+
+type Citation = {
+  id: string;
+  title: string;
+  authors: string;
+  year: string;
+  source: 'manual' | 'zotero' | 'mendeley' | 'search';
+};
+
+const getTemplateClasses = (template: string) => {
+  switch (template) {
+    case 'Harvard University': return '[&_.ProseMirror]:font-serif [&_.ProseMirror]:leading-loose [&_.ProseMirror_h1]:text-red-900 [&_.ProseMirror_h2]:text-red-900 [&_.ProseMirror_p]:text-justify';
+    case 'Stanford University': return '[&_.ProseMirror]:font-sans [&_.ProseMirror]:leading-relaxed [&_.ProseMirror_h1]:text-red-800 [&_.ProseMirror_h2]:text-red-800';
+    case 'MIT Thesis': return '[&_.ProseMirror]:font-mono [&_.ProseMirror]:leading-normal [&_.ProseMirror_h1]:uppercase [&_.ProseMirror_h2]:uppercase [&_.ProseMirror_h1]:tracking-widest';
+    case 'Oxford Style': return '[&_.ProseMirror]:font-serif [&_.ProseMirror]:leading-loose [&_.ProseMirror_h1]:text-blue-900 [&_.ProseMirror_h2]:text-blue-900 [&_.ProseMirror_h1]:font-normal';
+    default: return '[&_.ProseMirror]:font-serif [&_.ProseMirror]:leading-relaxed';
+  }
+};
+
+export default function ThesisEditor({ documentId }: { documentId: string }) {
+  const [isMobile, setIsMobile] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [showCitationPanel, setShowCitationPanel] = useState(false);
+  const [showResearchPanel, setShowResearchPanel] = useState(false);
+  const [showOutlinePanel, setShowOutlinePanel] = useState(true);
+  const [isGeneratingAbstract, setIsGeneratingAbstract] = useState(false);
+  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+  const [isCheckingAcademic, setIsCheckingAcademic] = useState(false);
+  const [isParaphrasing, setIsParaphrasing] = useState(false);
+  const [zoteroConnected, setZoteroConnected] = useState(false);
+  const [mendeleyConnected, setMendeleyConnected] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('Standard Academic');
+  
+  // Research Assistant State
+  const [researchQuery, setResearchQuery] = useState('');
+  const [researchMessages, setResearchMessages] = useState<{role: 'user' | 'assistant', content: string, urls?: string[]}[]>([
+    { role: 'assistant', content: "Hi! I'm your AI Research Assistant. You can ask me to find papers, summarize topics, or explain concepts related to your thesis." }
+  ]);
+  const [isResearching, setIsResearching] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setShowOutlinePanel(false);
+      } else {
+        setShowOutlinePanel(true);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Citation Management State
+  const [citations, setCitations] = useState<Citation[]>([
+    { id: '1', title: 'Attention is All You Need', authors: 'Vaswani et al.', year: '2017', source: 'search' }
+  ]);
+  const [citationStyle, setCitationStyle] = useState('APA');
+  const [showAddCitation, setShowAddCitation] = useState(false);
+  const [newCitation, setNewCitation] = useState({ title: '', authors: '', year: '' });
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'Start writing your thesis...',
+      }),
+      CharacterCount,
+      Highlight,
+      Typography,
+      Underline,
+      Superscript,
+      Subscript,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      Link.configure({
+        openOnClick: false,
+      }),
+      Image,
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      TaskList,
+      TaskItem.configure({
+        nested: true,
+      }),
+      TextStyle,
+      Color,
+    ],
+    content: `
+      <h1>Impact of AI on Education</h1>
+      <p>Artificial Intelligence (AI) is rapidly transforming the educational landscape...</p>
+    `,
+    editorProps: {
+      attributes: {
+        class: 'prose prose-lg max-w-none focus:outline-none min-h-[calc(100vh-12rem)]',
+      },
+    },
+  });
+
+  const generateAbstract = async () => {
+    if (!editor) return;
+    
+    setIsGeneratingAbstract(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const documentContent = editor.getText();
+      
+      const prompt = `Write a research paper abstract based on the provided document. The abstract should be approximately 200-750 words and accurately summarize the document's main topic, research questions or objectives, methodology, key findings, and the significance or implications of the research.\n\nDocument:\n${documentContent}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        // Insert the abstract at the beginning of the document
+        editor.chain().focus().insertContentAt(0, `<h2>Abstract</h2><p>${response.text}</p><hr>`).run();
+      }
+    } catch (error) {
+      console.error('Failed to generate abstract:', error);
+      alert('Failed to generate abstract. Please try again.');
+    } finally {
+      setIsGeneratingAbstract(false);
+    }
+  };
+
+  const generateOutline = async () => {
+    if (!editor) return;
+    
+    setIsGeneratingOutline(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const documentContent = editor.getText();
+      
+      const prompt = `Create a detailed outline for an academic thesis using the provided document. The outline should include standard sections such as Introduction, Literature Review, Methodology, Results, Discussion, and Conclusion, with suggested sub-points for each section based on the document's content.\n\nDocument:\n${documentContent}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        editor.chain().focus().insertContentAt(editor.state.selection.to, `<h2>Proposed Outline</h2>${response.text.replace(/\n/g, '<br>')}<hr>`).run();
+      }
+    } catch (error) {
+      console.error('Failed to generate outline:', error);
+      alert('Failed to generate outline. Please try again.');
+    } finally {
+      setIsGeneratingOutline(false);
+    }
+  };
+
+  const checkAcademicTone = async () => {
+    if (!editor) return;
+    
+    setIsCheckingAcademic(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const documentContent = editor.getText();
+      
+      const prompt = `Act as an Academic Checker tool. Review the following text and flag potential issues such as passive voice, wordiness, and weak verbs. Offer specific suggestions for improvement.\n\nText:\n${documentContent}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        alert("Academic Check Results:\n\n" + response.text);
+      }
+    } catch (error) {
+      console.error('Failed to check academic tone:', error);
+      alert('Failed to check academic tone. Please try again.');
+    } finally {
+      setIsCheckingAcademic(false);
+    }
+  };
+
+  const paraphraseSelection = async () => {
+    if (!editor) return;
+    
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select some text to paraphrase.");
+      return;
+    }
+
+    setIsParaphrasing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      
+      const prompt = `Paraphrase the following sentence to improve sentence structure and academic tone:\n\n${text}`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      if (response.text) {
+        editor.chain().focus().insertContent(response.text).run();
+      }
+    } catch (error) {
+      console.error('Failed to paraphrase:', error);
+      alert('Failed to paraphrase. Please try again.');
+    } finally {
+      setIsParaphrasing(false);
+    }
+  };
+
+  const handleResearchQuery = async () => {
+    if (!researchQuery.trim() || isResearching) return;
+    
+    const userMessage = { role: 'user' as const, content: researchQuery };
+    setResearchMessages(prev => [...prev, userMessage]);
+    setResearchQuery('');
+    setIsResearching(true);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: userMessage.content,
+        config: {
+          tools: [{ googleSearch: {} }],
+        }
+      });
+      
+      let urls: string[] = [];
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      if (chunks) {
+        chunks.forEach((chunk: any) => {
+          if (chunk.web?.uri) {
+            urls.push(chunk.web.uri);
+          }
+        });
+      }
+      
+      setResearchMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: response.text || 'Sorry, I could not find an answer.',
+        urls: urls.length > 0 ? Array.from(new Set(urls)) : undefined
+      }]);
+    } catch (error) {
+      console.error('Research query failed:', error);
+      setResearchMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred while researching. Please try again.' }]);
+    } finally {
+      setIsResearching(false);
+    }
+  };
+
+  const handleConnectZotero = () => {
+    if (!zoteroConnected) {
+      setCitations(prev => [...prev, { id: 'z1', title: 'Deep Learning', authors: 'LeCun, Bengio, Hinton', year: '2015', source: 'zotero' }]);
+    } else {
+      setCitations(prev => prev.filter(c => c.source !== 'zotero'));
+    }
+    setZoteroConnected(!zoteroConnected);
+  };
+
+  const handleConnectMendeley = () => {
+    if (!mendeleyConnected) {
+      setCitations(prev => [...prev, { id: 'm1', title: 'Generative Adversarial Nets', authors: 'Goodfellow et al.', year: '2014', source: 'mendeley' }]);
+    } else {
+      setCitations(prev => prev.filter(c => c.source !== 'mendeley'));
+    }
+    setMendeleyConnected(!mendeleyConnected);
+  };
+
+  const handleAddCitation = () => {
+    if (newCitation.title && newCitation.authors) {
+      setCitations(prev => [...prev, { id: Date.now().toString(), ...newCitation, source: 'manual' }]);
+      setNewCitation({ title: '', authors: '', year: '' });
+      setShowAddCitation(false);
+    }
+  };
+
+  const formatCitation = (citation: Citation, style: string) => {
+    if (style === 'APA') {
+      return `(${citation.authors}, ${citation.year})`;
+    } else if (style === 'MLA') {
+      return `(${citation.authors.split(',')[0]} ${citation.year})`;
+    } else if (style === 'Chicago') {
+      return `(${citation.authors}, ${citation.year})`;
+    }
+    return `[${citation.id}]`;
+  };
+
+  const formatBibliographyEntry = (citation: Citation, style: string) => {
+    if (style === 'APA') {
+      return `${citation.authors} (${citation.year}). ${citation.title}.`;
+    } else if (style === 'MLA') {
+      return `${citation.authors}. "${citation.title}." (${citation.year}).`;
+    } else if (style === 'Chicago') {
+      return `${citation.authors}. ${citation.title}. ${citation.year}.`;
+    }
+    return `${citation.authors}, ${citation.title}, ${citation.year}.`;
+  };
+
+  const insertCitation = (citation: Citation) => {
+    if (!editor) return;
+    const formatted = formatCitation(citation, citationStyle);
+    editor.chain().focus().insertContent(` ${formatted} `).run();
+  };
+
+  const generateBibliography = () => {
+    if (!editor) return;
+    
+    let bibHtml = `<h2>References</h2><ul>`;
+    citations.forEach(c => {
+      bibHtml += `<li>${formatBibliographyEntry(c, citationStyle)}</li>`;
+    });
+    bibHtml += `</ul>`;
+    
+    editor.chain().focus().insertContentAt(editor.state.doc.content.size, bibHtml).run();
+  };
+
+  const togglePanel = (panel: 'ai' | 'citation' | 'research' | 'outline') => {
+    if (isMobile) {
+      setShowAiPanel(panel === 'ai' ? !showAiPanel : false);
+      setShowCitationPanel(panel === 'citation' ? !showCitationPanel : false);
+      setShowResearchPanel(panel === 'research' ? !showResearchPanel : false);
+      setShowOutlinePanel(panel === 'outline' ? !showOutlinePanel : false);
+    } else {
+      if (panel === 'ai') setShowAiPanel(!showAiPanel);
+      if (panel === 'citation') setShowCitationPanel(!showCitationPanel);
+      if (panel === 'research') setShowResearchPanel(!showResearchPanel);
+      if (panel === 'outline') setShowOutlinePanel(!showOutlinePanel);
+    }
+  };
+
+  return (
+    <div className="flex h-screen bg-neutral-50 overflow-hidden relative">
+      <Group orientation="horizontal">
+        {/* Left Sidebar - Document Organization */}
+        {showOutlinePanel && (
+          <>
+            <Panel defaultSize={20} minSize={15} maxSize={30} className={`bg-white flex flex-col flex-shrink-0 border-r border-neutral-200 ${isMobile ? '!absolute !inset-y-0 !left-0 !z-50 !w-80 !flex-none shadow-2xl' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2 text-neutral-800">
+                  <ListTree className="w-4 h-4" />
+                  Document Structure
+                </h2>
+                <button onClick={() => setShowOutlinePanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              <div className="flex-1 overflow-auto p-3 space-y-1">
+                <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-700">
+                  <ChevronDown className="w-4 h-4 text-neutral-400" />
+                  <Folder className="w-4 h-4 text-indigo-500" />
+                  <span className="font-medium">Chapter 1: Introduction</span>
+                </div>
+                <div className="flex items-center gap-2 px-2 py-1.5 pl-8 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-600">
+                  <FileText className="w-4 h-4 text-neutral-400" />
+                  <span>Background</span>
+                </div>
+                <div className="flex items-center gap-2 px-2 py-1.5 pl-8 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-600">
+                  <FileText className="w-4 h-4 text-neutral-400" />
+                  <span>Problem Statement</span>
+                </div>
+                
+                <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-700 mt-2">
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                  <Folder className="w-4 h-4 text-indigo-500" />
+                  <span className="font-medium">Chapter 2: Literature Review</span>
+                </div>
+                
+                <div className="mt-6 px-2">
+                  <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Tag className="w-3 h-3" /> Tags
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md border border-blue-100">#AI</span>
+                    <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-md border border-emerald-100">#Education</span>
+                    <span className="px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded-md border border-purple-100">#Review</span>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+            {!isMobile && <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize" />}
+          </>
+        )}
+
+        {/* Main Editor Area */}
+        <Panel defaultSize={showOutlinePanel && !isMobile ? 55 : 75} minSize={30} className="flex flex-col min-w-0">
+          {/* Top Bar */}
+          <div className="h-16 bg-white border-b border-neutral-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+              {!showOutlinePanel && (
+                <button 
+                  onClick={() => togglePanel('outline')}
+                  className="p-1.5 text-neutral-500 hover:bg-neutral-100 rounded-md transition-colors"
+                  title="Show Outline"
+                >
+                  <ListTree className="w-5 h-5" />
+                </button>
+              )}
+              <h1 className="font-semibold text-neutral-900 truncate text-sm sm:text-base">Impact of AI on Education</h1>
+              <span className="hidden sm:inline-block px-2 py-1 bg-neutral-100 text-neutral-600 text-xs font-medium rounded-md">Draft</span>
+              
+              {/* Template Selector */}
+              <div className="hidden md:flex items-center ml-4 gap-2">
+                <LayoutTemplate className="w-4 h-4 text-neutral-400" />
+                <select 
+                  value={selectedTemplate}
+                  onChange={(e) => setSelectedTemplate(e.target.value)}
+                  className="text-sm bg-transparent border-none text-neutral-600 focus:ring-0 cursor-pointer"
+                >
+                  <option>Standard Academic</option>
+                  <option>Harvard University</option>
+                  <option>Stanford University</option>
+                  <option>MIT Thesis</option>
+                  <option>Oxford Style</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0 ml-2">
+              <button 
+                onClick={() => togglePanel('citation')}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${showCitationPanel ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                title="Citations"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span className="hidden lg:inline">Citations</span>
+              </button>
+              <button 
+                onClick={() => togglePanel('ai')}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${showAiPanel ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                title="AI Assistant"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="hidden lg:inline">AI Assistant</span>
+              </button>
+              <button 
+                onClick={() => togglePanel('research')}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${showResearchPanel ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                title="AI Research"
+              >
+                <Search className="w-4 h-4" />
+                <span className="hidden lg:inline">AI Research</span>
+              </button>
+              <div className="hidden sm:block w-px h-6 bg-neutral-200 mx-1"></div>
+              <button className="hidden sm:block p-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors" title="Share">
+                <Share2 className="w-5 h-5" />
+              </button>
+              <button className="hidden sm:block p-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors" title="Download">
+                <Download className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          
+          <EditorToolbar editor={editor} />
+
+          {/* Editor Content */}
+          <div className="flex-1 overflow-auto p-4 sm:p-8">
+            <div className={`max-w-4xl mx-auto bg-white border border-neutral-200 shadow-sm rounded-2xl p-6 sm:p-12 min-h-full ${getTemplateClasses(selectedTemplate)}`}>
+              <EditorContent editor={editor} />
+            </div>
+          </div>
+
+          {/* Footer - Progress Tracker */}
+          <div className="h-12 bg-white border-t border-neutral-200 flex items-center px-4 sm:px-6 text-xs sm:text-sm text-neutral-500 flex-shrink-0 justify-between">
+            <div className="flex items-center gap-4 sm:gap-6">
+              <span>{editor?.storage.characterCount.words()} words</span>
+              <span className="hidden sm:inline">{editor?.storage.characterCount.characters()} characters</span>
+              
+              <div className="flex items-center gap-2 ml-4">
+                <span className="font-medium text-neutral-700">Progress:</span>
+                <div className="w-24 sm:w-32 h-2 bg-neutral-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 w-[45%] rounded-full"></div>
+                </div>
+                <span>45%</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+              <span className="hidden sm:inline">Saved to cloud</span>
+            </div>
+          </div>
+        </Panel>
+
+        {/* Sidebars */}
+        {showAiPanel && (
+          <>
+            {!isMobile && (
+              <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize">
+                <div className="h-8 w-1 bg-neutral-400 rounded-full flex items-center justify-center">
+                </div>
+              </Separator>
+            )}
+            <Panel defaultSize={25} minSize={20} maxSize={40} className={`bg-white flex flex-col flex-shrink-0 ${isMobile ? '!absolute !inset-y-0 !right-0 !z-50 !w-80 !flex-none shadow-2xl border-l border-neutral-200' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  AI Assistant
+                </h2>
+                <button onClick={() => setShowAiPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 space-y-4">
+                {/* Generate Abstract Tool */}
+                <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-indigo-900 mb-1 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-indigo-600" />
+                    Generate Abstract
+                  </h3>
+                  <p className="text-xs text-indigo-700/80 mb-3 leading-relaxed">
+                    Automatically generate a 200-750 word abstract summarizing your document&apos;s main topic, methodology, and key findings.
+                  </p>
+                  <button 
+                    onClick={generateAbstract}
+                    disabled={isGeneratingAbstract}
+                    className="w-full px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isGeneratingAbstract ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      'Generate Now'
+                    )}
+                  </button>
+                </div>
+
+                {/* Generate Outline Tool */}
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-emerald-900 mb-1 flex items-center gap-2">
+                    <ListTree className="w-4 h-4 text-emerald-600" />
+                    Generate Outline
+                  </h3>
+                  <p className="text-xs text-emerald-700/80 mb-3 leading-relaxed">
+                    Create a detailed outline for an academic thesis based on your content.
+                  </p>
+                  <button 
+                    onClick={generateOutline}
+                    disabled={isGeneratingOutline}
+                    className="w-full px-3 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isGeneratingOutline ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</> : 'Generate Outline'}
+                  </button>
+                </div>
+
+                {/* Academic Checker Tool */}
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-amber-900 mb-1 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-amber-600" />
+                    Academic Checker
+                  </h3>
+                  <p className="text-xs text-amber-700/80 mb-3 leading-relaxed">
+                    Flag potential issues like passive voice, wordiness, and weak verbs.
+                  </p>
+                  <button 
+                    onClick={checkAcademicTone}
+                    disabled={isCheckingAcademic}
+                    className="w-full px-3 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isCheckingAcademic ? <><Loader2 className="w-4 h-4 animate-spin" /> Checking...</> : 'Check Academic Tone'}
+                  </button>
+                </div>
+
+                {/* Paraphrase Tool */}
+                <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-sm">
+                  <h3 className="text-sm font-medium text-neutral-900 mb-2">Paraphrase Selection</h3>
+                  <p className="text-xs text-neutral-600 mb-3">Select text in the editor and click below to improve sentence structure.</p>
+                  <button 
+                    onClick={paraphraseSelection}
+                    disabled={isParaphrasing}
+                    className="w-full px-3 py-2 bg-white border border-neutral-300 text-neutral-700 text-sm font-medium rounded-lg hover:bg-neutral-50 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isParaphrasing ? <><Loader2 className="w-4 h-4 animate-spin" /> Paraphrasing...</> : 'Paraphrase'}
+                  </button>
+                </div>
+
+                {/* Grammar Suggestion */}
+                <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-sm">
+                  <h3 className="text-sm font-medium text-neutral-900 mb-2">Grammar Suggestion</h3>
+                  <p className="text-sm text-neutral-600 mb-3">Consider rephrasing &quot;is rapidly transforming&quot; to &quot;has fundamentally altered&quot; for a stronger academic tone.</p>
+                  <div className="flex gap-2">
+                    <button className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-medium rounded-lg hover:bg-neutral-800">Accept</button>
+                    <button className="px-3 py-1.5 bg-white text-neutral-700 border border-neutral-200 text-xs font-medium rounded-lg hover:bg-neutral-50">Dismiss</button>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
+
+        {showCitationPanel && (
+          <>
+            {!isMobile && (
+              <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize">
+                <div className="h-8 w-1 bg-neutral-400 rounded-full flex items-center justify-center">
+                </div>
+              </Separator>
+            )}
+            <Panel defaultSize={25} minSize={20} maxSize={40} className={`bg-white flex flex-col flex-shrink-0 ${isMobile ? '!absolute !inset-y-0 !right-0 !z-50 !w-80 !flex-none shadow-2xl border-l border-neutral-200' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-neutral-600" />
+                  Citations
+                </h2>
+                <button onClick={() => setShowCitationPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              
+              {/* Style Selector & Actions */}
+              <div className="p-4 border-b border-neutral-100 bg-neutral-50 space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1 block">Citation Style</label>
+                  <select 
+                    value={citationStyle}
+                    onChange={(e) => setCitationStyle(e.target.value)}
+                    className="w-full text-sm bg-white border border-neutral-200 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-indigo-200 outline-none"
+                  >
+                    <option>APA</option>
+                    <option>MLA</option>
+                    <option>Chicago</option>
+                  </select>
+                </div>
+                <button 
+                  onClick={generateBibliography}
+                  className="w-full px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-2"
+                >
+                  <ListTree className="w-4 h-4" />
+                  Generate Bibliography
+                </button>
+              </div>
+
+              {/* Integrations */}
+              <div className="p-4 border-b border-neutral-100 bg-neutral-50">
+                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-3">Connect Accounts</h3>
+                <div className="space-y-2">
+                  <button 
+                    onClick={handleConnectZotero}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${zoteroConnected ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="w-4 h-4" />
+                      Zotero
+                    </div>
+                    {zoteroConnected ? 'Connected' : 'Connect'}
+                  </button>
+                  <button 
+                    onClick={handleConnectMendeley}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${mendeleyConnected ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="w-4 h-4" />
+                      Mendeley
+                    </div>
+                    {mendeleyConnected ? 'Connected' : 'Connect'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 border-b border-neutral-200 flex justify-between items-center">
+                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">My Library</h3>
+                <button onClick={() => setShowAddCitation(!showAddCitation)} className="text-xs font-medium text-indigo-600 hover:text-indigo-700">
+                  + Add Manual
+                </button>
+              </div>
+
+              {showAddCitation && (
+                <div className="p-4 border-b border-neutral-200 bg-indigo-50/50 space-y-2">
+                  <input 
+                    type="text" 
+                    placeholder="Title" 
+                    value={newCitation.title}
+                    onChange={e => setNewCitation({...newCitation, title: e.target.value})}
+                    className="w-full px-3 py-1.5 bg-white border border-neutral-200 rounded-md text-sm outline-none focus:border-indigo-500"
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Authors (e.g. Smith, J.)" 
+                    value={newCitation.authors}
+                    onChange={e => setNewCitation({...newCitation, authors: e.target.value})}
+                    className="w-full px-3 py-1.5 bg-white border border-neutral-200 rounded-md text-sm outline-none focus:border-indigo-500"
+                  />
+                  <input 
+                    type="text" 
+                    placeholder="Year" 
+                    value={newCitation.year}
+                    onChange={e => setNewCitation({...newCitation, year: e.target.value})}
+                    className="w-full px-3 py-1.5 bg-white border border-neutral-200 rounded-md text-sm outline-none focus:border-indigo-500"
+                  />
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button onClick={() => setShowAddCitation(false)} className="px-2 py-1 text-xs text-neutral-600 hover:text-neutral-800">Cancel</button>
+                    <button onClick={handleAddCitation} className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-md hover:bg-indigo-700">Save</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-auto p-4 space-y-3">
+                {citations.map(citation => (
+                  <div key={citation.id} className={`border rounded-xl p-3 hover:border-indigo-300 transition-colors ${citation.source === 'zotero' ? 'border-red-100 bg-red-50/30' : citation.source === 'mendeley' ? 'border-red-100 bg-red-50/30' : 'border-neutral-200 bg-white'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="text-sm font-medium text-neutral-900 line-clamp-1" title={citation.title}>{citation.title}</h3>
+                      {citation.source !== 'manual' && citation.source !== 'search' && (
+                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[9px] font-bold rounded uppercase ml-2 flex-shrink-0">{citation.source}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-neutral-500 mb-2">{citation.authors} ({citation.year})</p>
+                    <div className="flex justify-between items-center">
+                      <button onClick={() => insertCitation(citation)} className="text-xs font-medium text-indigo-600 hover:text-indigo-700">Insert Citation</button>
+                      <button onClick={() => setCitations(citations.filter(c => c.id !== citation.id))} className="text-xs text-neutral-400 hover:text-red-600">Remove</button>
+                    </div>
+                  </div>
+                ))}
+                {citations.length === 0 && (
+                  <div className="text-center text-sm text-neutral-500 py-4">
+                    No citations in library.
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </>
+        )}
+        {showResearchPanel && (
+          <>
+            {!isMobile && (
+              <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize">
+                <div className="h-8 w-1 bg-neutral-400 rounded-full flex items-center justify-center">
+                </div>
+              </Separator>
+            )}
+            <Panel defaultSize={25} minSize={20} maxSize={40} className={`bg-white flex flex-col flex-shrink-0 ${isMobile ? '!absolute !inset-y-0 !right-0 !z-50 !w-80 !flex-none shadow-2xl border-l border-neutral-200' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Search className="w-4 h-4 text-indigo-600" />
+                  AI Research Assistant
+                </h2>
+                <button onClick={() => setShowResearchPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 flex flex-col">
+                <div className="flex-1 space-y-4 overflow-y-auto pb-4">
+                  {researchMessages.map((msg, idx) => (
+                    <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[90%] rounded-xl p-3 text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-neutral-100 text-neutral-800'}`}>
+                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                        {msg.urls && msg.urls.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-neutral-200 space-y-1">
+                            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Sources</p>
+                            {msg.urls.map((url, uidx) => (
+                              <a key={uidx} href={url} target="_blank" rel="noopener noreferrer" className="block text-xs text-indigo-600 hover:underline truncate">
+                                {url}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isResearching && (
+                    <div className="flex items-start">
+                      <div className="bg-neutral-100 rounded-xl p-3 text-sm text-neutral-500 flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Researching...
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="mt-auto pt-4 border-t border-neutral-100">
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={researchQuery}
+                      onChange={(e) => setResearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleResearchQuery();
+                        }
+                      }}
+                      placeholder="Ask a research question..." 
+                      className="w-full pl-4 pr-10 py-3 bg-neutral-100 border-transparent rounded-xl text-sm focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                    />
+                    <button 
+                      onClick={handleResearchQuery}
+                      disabled={isResearching || !researchQuery.trim()}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                    >
+                      <Search className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
+      </Group>
+    </div>
+  );
+}
