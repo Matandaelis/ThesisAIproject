@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, CheckCircle, Clock, Zap, Plus, ArrowRight, BookOpen, Library, MoreVertical, Target, Award, TrendingUp, Calendar, Folder } from 'lucide-react';
+import { FileText, CheckCircle, Clock, Zap, Plus, ArrowRight, BookOpen, Library, MoreVertical, Target, Award, TrendingUp, Calendar, Folder, Sparkles, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
@@ -301,6 +301,65 @@ export default function DashboardPage() {
                 <span className="text-xs font-medium text-indigo-900">Goal Met</span>
               </div>
             </div>
+          </div>
+
+          {/* AI Quick Prompt */}
+          <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 shadow-sm p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-indigo-900">Ask AI Copilot</h2>
+              <Sparkles className="w-5 h-5 text-indigo-500" />
+            </div>
+            <p className="text-xs text-indigo-700/80 mb-3">Need a quick idea or literature summary? Ask your AI assistant.</p>
+            <div className="relative">
+              <input 
+                type="text" 
+                placeholder="e.g., Summarize recent papers on..." 
+                className="w-full bg-white border border-indigo-200 rounded-xl py-2.5 pl-3 pr-10 text-sm text-neutral-700 outline-none focus:ring-2 focus:ring-indigo-500/20 placeholder:text-neutral-400"
+              />
+              <button className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Recent Feedback */}
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-neutral-900">Recent Feedback</h2>
+              <MessageSquare className="w-5 h-5 text-neutral-400" />
+            </div>
+            <div className="space-y-4">
+              {[
+                { name: 'Dr. Smith', role: 'Supervisor', comment: 'Great methodology section. Expand on the limitations.', time: '2h ago', doc: 'Impact of AI...' },
+                { name: 'Sarah J.', role: 'Peer', comment: 'I think citation [4] is outdated. Check the 2025 paper.', time: '1d ago', doc: 'Machine Learning...' },
+              ].map((feedback, i) => (
+                <div key={i} className="p-3 rounded-xl bg-neutral-50 border border-neutral-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-neutral-900">{feedback.name}</span>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-neutral-200 text-neutral-600">{feedback.role}</span>
+                    </div>
+                    <span className="text-xs text-neutral-400">{feedback.time}</span>
+                  </div>
+                  <p className="text-sm text-neutral-600 mb-2 leading-snug">&quot;{feedback.comment}&quot;</p>
+                  <p className="text-xs text-indigo-600 font-medium flex items-center gap-1">
+                    <FileText className="w-3 h-3" /> {feedback.doc}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Storage Status */}
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-neutral-900">Cloud Storage</h2>
+              <span className="text-xs font-medium text-neutral-500">2.4 GB / 5 GB</span>
+            </div>
+            <div className="h-2 bg-neutral-100 rounded-full overflow-hidden mb-3">
+              <div className="h-full bg-indigo-500 rounded-full" style={{ width: '48%' }}></div>
+            </div>
+            <p className="text-xs text-neutral-500">You have used 48% of your available storage for documents and PDFs.</p>
           </div>
 
         </div>

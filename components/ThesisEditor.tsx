@@ -20,8 +20,9 @@ import TaskItem from '@tiptap/extension-task-item';
 import TaskList from '@tiptap/extension-task-list';
 import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
+import { Mark, mergeAttributes } from '@tiptap/core';
 import { useState, useEffect } from 'react';
-import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X, ShieldAlert, Wand2, Quote } from 'lucide-react';
+import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X, ShieldAlert, Wand2, Quote, Languages, SpellCheck, Minimize2 } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { EditorToolbar } from './EditorToolbar';
 import { GoogleGenAI } from '@google/genai';
@@ -33,6 +34,43 @@ type Citation = {
   year: string;
   source: 'manual' | 'zotero' | 'mendeley' | 'search';
 };
+
+const CitationMark = Mark.create({
+  name: 'citation',
+  addOptions() {
+    return {
+      HTMLAttributes: {
+        class: 'citation-highlight cursor-pointer bg-indigo-100 text-indigo-800 rounded px-1 hover:bg-indigo-200 transition-colors',
+      },
+    }
+  },
+  addAttributes() {
+    return {
+      id: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-citation-id'),
+        renderHTML: attributes => {
+          if (!attributes.id) {
+            return {}
+          }
+          return {
+            'data-citation-id': attributes.id,
+          }
+        },
+      },
+    }
+  },
+  parseHTML() {
+    return [
+      {
+        tag: 'span[data-citation-id]',
+      },
+    ]
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes), 0]
+  },
+});
 
 const getTemplateClasses = (template: string) => {
   switch (template) {
@@ -59,9 +97,13 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
   const [isCheckingPlagiarism, setIsCheckingPlagiarism] = useState(false);
   const [isAutocompleting, setIsAutocompleting] = useState(false);
   const [isGeneratingCitation, setIsGeneratingCitation] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [isGrammarChecking, setIsGrammarChecking] = useState(false);
   const [zoteroConnected, setZoteroConnected] = useState(false);
   const [mendeleyConnected, setMendeleyConnected] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('Standard Academic');
+  const [highlightedCitationId, setHighlightedCitationId] = useState<string | null>(null);
   
   // Research Assistant State
   const [researchQuery, setResearchQuery] = useState('');
@@ -97,6 +139,7 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     immediatelyRender: false,
     extensions: [
       StarterKit,
+      CitationMark,
       Placeholder.configure({
         placeholder: 'Start writing your thesis...',
       }),
@@ -134,6 +177,21 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
       attributes: {
         class: 'prose prose-lg max-w-none focus:outline-none min-h-[calc(100vh-12rem)]',
       },
+      handleClick: (view, pos, event) => {
+        const target = event.target as HTMLElement;
+        const citationId = target.getAttribute('data-citation-id') || target.closest('[data-citation-id]')?.getAttribute('data-citation-id');
+        if (citationId) {
+          setShowCitationPanel(true);
+          setHighlightedCitationId(citationId);
+          setTimeout(() => {
+            const el = document.getElementById(`citation-${citationId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 100);
+          return true;
+        }
+        setHighlightedCitationId(null);
+        return false;
+      }
     },
   });
 
@@ -408,6 +466,94 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     }
   };
 
+  const summarizeSelection = async () => {
+    if (!editor) return;
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select text to summarize.");
+      return;
+    }
+    setIsSummarizing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const prompt = `Summarize the following academic text concisely:\n\n${text}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: prompt,
+      });
+      if (response.text) {
+        editor.chain().focus().insertContent(response.text).run();
+      }
+    } catch (error) {
+      console.error('Failed to summarize:', error);
+      alert('Failed to summarize text.');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const translateSelection = async () => {
+    if (!editor) return;
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    if (!text) {
+      alert("Please select text to translate.");
+      return;
+    }
+    setIsTranslating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const prompt = `Translate the following academic text to English (if it's not) or to French (if it is English), maintaining academic tone:\n\n${text}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: prompt,
+      });
+      if (response.text) {
+        editor.chain().focus().insertContent(response.text).run();
+      }
+    } catch (error) {
+      console.error('Failed to translate:', error);
+      alert('Failed to translate text.');
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const checkGrammar = async () => {
+    if (!editor) return;
+    const selection = editor.state.selection;
+    const text = editor.state.doc.textBetween(selection.from, selection.to, ' ');
+    const contentToProcess = text || editor.getText();
+    
+    if (!contentToProcess) {
+      alert("The document is empty.");
+      return;
+    }
+    
+    setIsGrammarChecking(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
+      const prompt = `Review the following academic text for grammar, spelling, and punctuation errors. Provide a corrected version of the text. If there are no errors, return the original text.\n\nText:\n${contentToProcess}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-pro-preview',
+        contents: prompt,
+      });
+      if (response.text) {
+        if (text) {
+          editor.chain().focus().insertContent(response.text).run();
+        } else {
+          editor.commands.setContent(response.text);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check grammar:', error);
+      alert('Failed to check grammar.');
+    } finally {
+      setIsGrammarChecking(false);
+    }
+  };
+
   const generateCitation = async () => {
     if (!editor) return;
     
@@ -422,7 +568,7 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
       
-      const prompt = `Act as an academic research assistant. Find a real, credible academic source that supports or relates to the following claim. Return ONLY the citation in APA format, nothing else.\n\nClaim:\n${text}`;
+      const prompt = `Act as an academic research assistant. Find a real, credible academic source that supports or relates to the following claim. Return the result as a JSON object with the following keys: "title", "authors" (e.g., "Smith et al."), "year", and "formatted" (the in-text citation, e.g., "Smith et al., 2023"). Return ONLY the JSON object, without markdown formatting.\n\nClaim:\n${text}`;
       
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-pro-preview',
@@ -433,7 +579,23 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
       });
 
       if (response.text) {
-        editor.chain().focus().insertContent(` (${response.text.trim()})`).run();
+        try {
+          const jsonStr = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
+          const data = JSON.parse(jsonStr);
+          const newId = Date.now().toString();
+          const newCit: Citation = {
+            id: newId,
+            title: data.title || 'Unknown Title',
+            authors: data.authors || 'Unknown Authors',
+            year: data.year || new Date().getFullYear().toString(),
+            source: 'search'
+          };
+          setCitations(prev => [...prev, newCit]);
+          editor.chain().focus().insertContent(` <span data-citation-id="${newId}">(${data.formatted || data.authors + ', ' + data.year})</span> `).run();
+        } catch (e) {
+          // Fallback if JSON parsing fails
+          editor.chain().focus().insertContent(` (${response.text.trim()})`).run();
+        }
       }
     } catch (error) {
       console.error('Failed to generate citation:', error);
@@ -548,14 +710,35 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
   const insertCitation = (citation: Citation) => {
     if (!editor) return;
     const formatted = formatCitation(citation, citationStyle);
-    editor.chain().focus().insertContent(` ${formatted} `).run();
+    editor.chain().focus().insertContent(` <span data-citation-id="${citation.id}">${formatted}</span> `).run();
+  };
+
+  const getInsertedCitationIds = () => {
+    if (!editor) return [];
+    const ids = new Set<string>();
+    editor.state.doc.descendants((node) => {
+      node.marks.forEach(mark => {
+        if (mark.type.name === 'citation' && mark.attrs.id) {
+          ids.add(mark.attrs.id);
+        }
+      });
+    });
+    return Array.from(ids);
   };
 
   const generateBibliography = () => {
     if (!editor) return;
     
+    const insertedIds = getInsertedCitationIds();
+    const insertedCitations = citations.filter(c => insertedIds.includes(c.id));
+    
+    if (insertedCitations.length === 0) {
+      alert("No citations found in the document. Please insert some citations first.");
+      return;
+    }
+
     let bibHtml = `<h2>References</h2><ul>`;
-    citations.forEach(c => {
+    insertedCitations.forEach(c => {
       bibHtml += `<li>${formatBibliographyEntry(c, citationStyle)}</li>`;
     });
     bibHtml += `</ul>`;
@@ -901,6 +1084,60 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
                   </button>
                 </div>
 
+                {/* Summarize Tool */}
+                <div className="bg-gradient-to-br from-fuchsia-50 to-pink-50 border border-fuchsia-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-fuchsia-900 mb-1 flex items-center gap-2">
+                    <Minimize2 className="w-4 h-4 text-fuchsia-600" />
+                    Summarize Section
+                  </h3>
+                  <p className="text-xs text-fuchsia-700/80 mb-3 leading-relaxed">
+                    Condense the selected text into a concise summary while retaining key points.
+                  </p>
+                  <button 
+                    onClick={summarizeSelection}
+                    disabled={isSummarizing}
+                    className="w-full px-3 py-2 bg-fuchsia-600 text-white text-sm font-medium rounded-lg hover:bg-fuchsia-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSummarizing ? <><Loader2 className="w-4 h-4 animate-spin" /> Summarizing...</> : 'Summarize Text'}
+                  </button>
+                </div>
+
+                {/* Translate Tool */}
+                <div className="bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-sky-900 mb-1 flex items-center gap-2">
+                    <Languages className="w-4 h-4 text-sky-600" />
+                    Translate
+                  </h3>
+                  <p className="text-xs text-sky-700/80 mb-3 leading-relaxed">
+                    Translate the selected text to English or French, maintaining an academic tone.
+                  </p>
+                  <button 
+                    onClick={translateSelection}
+                    disabled={isTranslating}
+                    className="w-full px-3 py-2 bg-sky-600 text-white text-sm font-medium rounded-lg hover:bg-sky-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isTranslating ? <><Loader2 className="w-4 h-4 animate-spin" /> Translating...</> : 'Translate Text'}
+                  </button>
+                </div>
+
+                {/* Grammar Check Tool */}
+                <div className="bg-gradient-to-br from-lime-50 to-green-50 border border-lime-100 rounded-xl p-4">
+                  <h3 className="text-sm font-semibold text-lime-900 mb-1 flex items-center gap-2">
+                    <SpellCheck className="w-4 h-4 text-lime-600" />
+                    Grammar & Spell Check
+                  </h3>
+                  <p className="text-xs text-lime-700/80 mb-3 leading-relaxed">
+                    Review your document or selection for grammar, spelling, and punctuation errors.
+                  </p>
+                  <button 
+                    onClick={checkGrammar}
+                    disabled={isGrammarChecking}
+                    className="w-full px-3 py-2 bg-lime-600 text-white text-sm font-medium rounded-lg hover:bg-lime-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isGrammarChecking ? <><Loader2 className="w-4 h-4 animate-spin" /> Checking...</> : 'Check Grammar'}
+                  </button>
+                </div>
+
                 {/* Paraphrase Tool */}
                 <div className="bg-white border border-neutral-200 rounded-xl p-4 shadow-sm">
                   <h3 className="text-sm font-medium text-neutral-900 mb-2">Edit Selection</h3>
@@ -1059,7 +1296,11 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
 
               <div className="flex-1 overflow-auto p-4 space-y-3">
                 {citations.map(citation => (
-                  <div key={citation.id} className={`border rounded-xl p-3 hover:border-indigo-300 transition-colors ${citation.source === 'zotero' ? 'border-red-100 bg-red-50/30' : citation.source === 'mendeley' ? 'border-red-100 bg-red-50/30' : 'border-neutral-200 bg-white'}`}>
+                  <div 
+                    key={citation.id} 
+                    id={`citation-${citation.id}`}
+                    className={`border rounded-xl p-3 transition-colors ${highlightedCitationId === citation.id ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200' : citation.source === 'zotero' || citation.source === 'mendeley' ? 'border-red-100 bg-red-50/30 hover:border-indigo-300' : 'border-neutral-200 bg-white hover:border-indigo-300'}`}
+                  >
                     <div className="flex items-center justify-between mb-1">
                       <h3 className="text-sm font-medium text-neutral-900 line-clamp-1" title={citation.title}>{citation.title}</h3>
                       {citation.source !== 'manual' && citation.source !== 'search' && (
