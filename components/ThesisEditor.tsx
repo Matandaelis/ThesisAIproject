@@ -22,10 +22,17 @@ import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Mark, mergeAttributes } from '@tiptap/core';
 import { useState, useEffect } from 'react';
-import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X, ShieldAlert, Wand2, Quote, Languages, SpellCheck, Minimize2 } from 'lucide-react';
+import { Sparkles, BookOpen, Download, Share2, MessageSquare, GripVertical, Search, Loader2, Folder, Tag, ListTree, ChevronRight, ChevronDown, FileText, CheckCircle2, LayoutTemplate, Link as LinkIcon, Menu, X, ShieldAlert, Wand2, Quote, Languages, SpellCheck, Minimize2, Settings, Briefcase, Lightbulb, PenTool, Microscope, GraduationCap } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { EditorToolbar } from './EditorToolbar';
 import { GoogleGenAI } from '@google/genai';
+import dynamic from 'next/dynamic';
+import 'react-latex-editor/styles';
+
+const LatexEditor = dynamic(
+  () => import('react-latex-editor').then((mod) => mod.Editor),
+  { ssr: false }
+);
 
 type Citation = {
   id: string;
@@ -33,6 +40,13 @@ type Citation = {
   authors: string;
   year: string;
   source: 'manual' | 'zotero' | 'mendeley' | 'search';
+};
+
+type OutlineItem = {
+  id: string;
+  level: number;
+  text: string;
+  pos: number;
 };
 
 const CitationMark = Mark.create({
@@ -89,6 +103,9 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [showCitationPanel, setShowCitationPanel] = useState(false);
   const [showResearchPanel, setShowResearchPanel] = useState(false);
+  const [showLatexPanel, setShowLatexPanel] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showToolkitPanel, setShowToolkitPanel] = useState(false);
   const [showOutlinePanel, setShowOutlinePanel] = useState(true);
   const [isGeneratingAbstract, setIsGeneratingAbstract] = useState(false);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
@@ -104,6 +121,7 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
   const [mendeleyConnected, setMendeleyConnected] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('Standard Academic');
   const [highlightedCitationId, setHighlightedCitationId] = useState<string | null>(null);
+  const [outline, setOutline] = useState<OutlineItem[]>([]);
   
   // Research Assistant State
   const [researchQuery, setResearchQuery] = useState('');
@@ -111,6 +129,9 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
     { role: 'assistant', content: "Hi! I'm your AI Research Assistant. You can ask me to find papers, summarize topics, or explain concepts related to your thesis." }
   ]);
   const [isResearching, setIsResearching] = useState(false);
+  
+  // LaTeX Editor State
+  const [latexContent, setLatexContent] = useState('<p>Write your math equations here...</p>');
 
   useEffect(() => {
     const checkMobile = () => {
@@ -192,6 +213,34 @@ export default function ThesisEditor({ documentId }: { documentId: string }) {
         setHighlightedCitationId(null);
         return false;
       }
+    },
+    onCreate: ({ editor }) => {
+      const items: OutlineItem[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'heading') {
+          items.push({
+            id: `heading-${pos}`,
+            level: node.attrs.level,
+            text: node.textContent,
+            pos,
+          });
+        }
+      });
+      setOutline(items);
+    },
+    onUpdate: ({ editor }) => {
+      const items: OutlineItem[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'heading') {
+          items.push({
+            id: `heading-${pos}`,
+            level: node.attrs.level,
+            text: node.textContent,
+            pos,
+          });
+        }
+      });
+      setOutline(items);
     },
   });
 
@@ -778,16 +827,22 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
     URL.revokeObjectURL(url);
   };
 
-  const togglePanel = (panel: 'ai' | 'citation' | 'research' | 'outline') => {
+  const togglePanel = (panel: 'ai' | 'citation' | 'research' | 'outline' | 'latex' | 'settings' | 'toolkit') => {
     if (isMobile) {
       setShowAiPanel(panel === 'ai' ? !showAiPanel : false);
       setShowCitationPanel(panel === 'citation' ? !showCitationPanel : false);
       setShowResearchPanel(panel === 'research' ? !showResearchPanel : false);
+      setShowLatexPanel(panel === 'latex' ? !showLatexPanel : false);
+      setShowSettingsPanel(panel === 'settings' ? !showSettingsPanel : false);
+      setShowToolkitPanel(panel === 'toolkit' ? !showToolkitPanel : false);
       setShowOutlinePanel(panel === 'outline' ? !showOutlinePanel : false);
     } else {
       if (panel === 'ai') setShowAiPanel(!showAiPanel);
       if (panel === 'citation') setShowCitationPanel(!showCitationPanel);
       if (panel === 'research') setShowResearchPanel(!showResearchPanel);
+      if (panel === 'latex') setShowLatexPanel(!showLatexPanel);
+      if (panel === 'settings') setShowSettingsPanel(!showSettingsPanel);
+      if (panel === 'toolkit') setShowToolkitPanel(!showToolkitPanel);
       if (panel === 'outline') setShowOutlinePanel(!showOutlinePanel);
     }
   };
@@ -807,25 +862,39 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
                 <button onClick={() => setShowOutlinePanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
               </div>
               <div className="flex-1 overflow-auto p-3 space-y-1">
-                <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-700">
-                  <ChevronDown className="w-4 h-4 text-neutral-400" />
-                  <Folder className="w-4 h-4 text-indigo-500" />
-                  <span className="font-medium">Chapter 1: Introduction</span>
-                </div>
-                <div className="flex items-center gap-2 px-2 py-1.5 pl-8 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-600">
-                  <FileText className="w-4 h-4 text-neutral-400" />
-                  <span>Background</span>
-                </div>
-                <div className="flex items-center gap-2 px-2 py-1.5 pl-8 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-600">
-                  <FileText className="w-4 h-4 text-neutral-400" />
-                  <span>Problem Statement</span>
-                </div>
-                
-                <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-700 mt-2">
-                  <ChevronRight className="w-4 h-4 text-neutral-400" />
-                  <Folder className="w-4 h-4 text-indigo-500" />
-                  <span className="font-medium">Chapter 2: Literature Review</span>
-                </div>
+                {outline.length === 0 ? (
+                  <div className="text-sm text-neutral-500 p-2">No headings found. Add headings to build your outline.</div>
+                ) : (
+                  outline.map((item) => (
+                    <div 
+                      key={item.id}
+                      onClick={() => {
+                        if (editor) {
+                          editor.commands.focus();
+                          editor.commands.setTextSelection(item.pos);
+                          // Scroll to the heading
+                          setTimeout(() => {
+                            const domNode = editor.view.nodeDOM(item.pos) as HTMLElement;
+                            if (domNode && domNode.scrollIntoView) {
+                              domNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                          }, 50);
+                        }
+                      }}
+                      className="flex items-center gap-2 py-1.5 hover:bg-neutral-100 rounded-md cursor-pointer text-sm text-neutral-600 transition-colors"
+                      style={{ paddingLeft: `${(item.level - 1) * 1 + 0.5}rem`, paddingRight: '0.5rem' }}
+                    >
+                      {item.level === 1 ? (
+                        <Folder className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                      )}
+                      <span className={`truncate ${item.level === 1 ? 'font-medium text-neutral-800' : ''}`}>
+                        {item.text || 'Untitled Section'}
+                      </span>
+                    </div>
+                  ))
+                )}
                 
                 <div className="mt-6 px-2">
                   <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -900,6 +969,30 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
               >
                 <Search className="w-4 h-4" />
                 <span className="hidden lg:inline">AI Research</span>
+              </button>
+              <button 
+                onClick={() => togglePanel('latex')}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${showLatexPanel ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                title="LaTeX Editor"
+              >
+                <span className="font-serif italic font-bold text-sm">fx</span>
+                <span className="hidden lg:inline">LaTeX</span>
+              </button>
+              <button 
+                onClick={() => togglePanel('settings')}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${showSettingsPanel ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                title="Document Settings"
+              >
+                <Settings className="w-4 h-4" />
+                <span className="hidden lg:inline">Settings</span>
+              </button>
+              <button 
+                onClick={() => togglePanel('toolkit')}
+                className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${showToolkitPanel ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                title="Scholar's Toolkit"
+              >
+                <Briefcase className="w-4 h-4" />
+                <span className="hidden lg:inline">Toolkit</span>
               </button>
               <div className="hidden sm:block w-px h-6 bg-neutral-200 mx-1"></div>
               <button className="hidden sm:block p-2 text-neutral-500 hover:bg-neutral-100 rounded-lg transition-colors" title="Share">
@@ -1388,6 +1481,214 @@ Please provide a helpful, academic response. If they ask for sources, use the Go
                     >
                       <Search className="w-4 h-4" />
                     </button>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
+        {showLatexPanel && (
+          <>
+            {!isMobile && (
+              <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize">
+                <div className="h-8 w-1 bg-neutral-400 rounded-full flex items-center justify-center">
+                </div>
+              </Separator>
+            )}
+            <Panel defaultSize={30} minSize={25} maxSize={50} className={`bg-white flex flex-col flex-shrink-0 ${isMobile ? '!absolute !inset-y-0 !right-0 !z-50 !w-80 !flex-none shadow-2xl border-l border-neutral-200' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <span className="font-serif italic font-bold text-indigo-600">fx</span>
+                  LaTeX Editor
+                </h2>
+                <button onClick={() => setShowLatexPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 flex flex-col">
+                <div className="flex-1 border border-neutral-200 rounded-xl overflow-hidden">
+                  <LatexEditor 
+                    initialContent={latexContent}
+                    onChange={setLatexContent}
+                    placeholder="Write your math equations here..."
+                    minHeight="100%"
+                  />
+                </div>
+                <div className="mt-4 pt-4 border-t border-neutral-100 flex justify-end">
+                  <button 
+                    onClick={() => {
+                      if (editor) {
+                        editor.chain().focus().insertContent(latexContent).run();
+                      }
+                    }}
+                    className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Insert to Document
+                  </button>
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
+        {showSettingsPanel && (
+          <>
+            {!isMobile && (
+              <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize">
+                <div className="h-8 w-1 bg-neutral-400 rounded-full flex items-center justify-center">
+                </div>
+              </Separator>
+            )}
+            <Panel defaultSize={25} minSize={20} maxSize={40} className={`bg-white flex flex-col flex-shrink-0 ${isMobile ? '!absolute !inset-y-0 !right-0 !z-50 !w-80 !flex-none shadow-2xl border-l border-neutral-200' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-indigo-600" />
+                  Document Settings
+                </h2>
+                <button onClick={() => setShowSettingsPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 flex flex-col gap-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3">Formatting</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-600 mb-1">Citation Style</label>
+                      <select className="w-full p-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 outline-none">
+                        <option>APA 7th Edition</option>
+                        <option>MLA 9th Edition</option>
+                        <option>Chicago Manual of Style</option>
+                        <option>Harvard</option>
+                        <option>IEEE</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-600 mb-1">Line Spacing</label>
+                      <select className="w-full p-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500 outline-none">
+                        <option>Single</option>
+                        <option>1.15</option>
+                        <option>1.5</option>
+                        <option>Double</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="border-t border-neutral-100 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3">Export Options</h3>
+                  <div className="space-y-2">
+                    <button onClick={exportDocument} className="w-full flex items-center justify-between p-2 hover:bg-neutral-50 rounded-lg border border-neutral-200 transition-colors text-sm text-neutral-700">
+                      <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-blue-500" /> Word Document (.docx)</span>
+                      <Download className="w-3 h-3 text-neutral-400" />
+                    </button>
+                    <button onClick={exportDocument} className="w-full flex items-center justify-between p-2 hover:bg-neutral-50 rounded-lg border border-neutral-200 transition-colors text-sm text-neutral-700">
+                      <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-red-500" /> PDF Document (.pdf)</span>
+                      <Download className="w-3 h-3 text-neutral-400" />
+                    </button>
+                    <button onClick={exportDocument} className="w-full flex items-center justify-between p-2 hover:bg-neutral-50 rounded-lg border border-neutral-200 transition-colors text-sm text-neutral-700">
+                      <span className="flex items-center gap-2"><FileText className="w-4 h-4 text-neutral-500" /> LaTeX (.tex)</span>
+                      <Download className="w-3 h-3 text-neutral-400" />
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="border-t border-neutral-100 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3">Document Info</h3>
+                  <div className="bg-neutral-50 rounded-lg p-3 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Words</span>
+                      <span className="font-medium text-neutral-700">{editor?.storage.characterCount.words() || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Characters</span>
+                      <span className="font-medium text-neutral-700">{editor?.storage.characterCount.characters() || 0}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Reading Time</span>
+                      <span className="font-medium text-neutral-700">{Math.ceil((editor?.storage.characterCount.words() || 0) / 200)} min</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          </>
+        )}
+        {showToolkitPanel && (
+          <>
+            {!isMobile && (
+              <Separator className="w-1 bg-neutral-200 hover:bg-indigo-400 transition-colors flex items-center justify-center cursor-col-resize">
+                <div className="h-8 w-1 bg-neutral-400 rounded-full flex items-center justify-center">
+                </div>
+              </Separator>
+            )}
+            <Panel defaultSize={25} minSize={20} maxSize={40} className={`bg-white flex flex-col flex-shrink-0 ${isMobile ? '!absolute !inset-y-0 !right-0 !z-50 !w-80 !flex-none shadow-2xl border-l border-neutral-200' : ''}`}>
+              <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-indigo-600" />
+                  Scholar&apos;s Toolkit
+                </h2>
+                <button onClick={() => setShowToolkitPanel(false)} className="text-neutral-400 hover:text-neutral-600">&times;</button>
+              </div>
+              <div className="flex-1 overflow-auto p-4 flex flex-col gap-6">
+                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                  <p className="text-sm text-indigo-800 leading-relaxed">
+                    <strong>30+ specialized tools</strong> designed to accelerate every stage of your research journey, from ideation to publication.
+                  </p>
+                </div>
+                
+                <div>
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-amber-500" /> Ideation & Planning
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Topic Generator</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Hypothesis Builder</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">RQ Refiner</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Outline Creator</button>
+                  </div>
+                </div>
+
+                <div className="border-t border-neutral-100 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center gap-2">
+                    <Search className="w-4 h-4 text-blue-500" /> Literature Review
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Source Evaluator</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Gap Analyzer</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Methodology Recs</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Lit Matrix Builder</button>
+                  </div>
+                </div>
+
+                <div className="border-t border-neutral-100 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center gap-2">
+                    <PenTool className="w-4 h-4 text-emerald-500" /> Writing & Drafting
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Abstract Generator</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Academic Tone</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Transition Flow</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Conclusion Writer</button>
+                  </div>
+                </div>
+
+                <div className="border-t border-neutral-100 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center gap-2">
+                    <Microscope className="w-4 h-4 text-purple-500" /> Data & Analysis
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Chart Describer</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Stat Test Selector</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Result Interpreter</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Limitation Finder</button>
+                  </div>
+                </div>
+
+                <div className="border-t border-neutral-100 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-800 mb-3 flex items-center gap-2">
+                    <GraduationCap className="w-4 h-4 text-rose-500" /> Publication
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Journal Matcher</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Cover Letter</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Review Simulator</button>
+                    <button className="p-2 text-left text-xs font-medium text-neutral-700 bg-white border border-neutral-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors">Response Drafter</button>
                   </div>
                 </div>
               </div>
