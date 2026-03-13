@@ -2,9 +2,9 @@ import { BookOpen, Search, Plus, ExternalLink } from 'lucide-react';
 
 export default function CitationsPage() {
   const citations = [
-    { id: '1', title: 'Attention is All You Need', authors: 'Vaswani, A. et al.', year: 2017, source: 'Semantic Scholar', type: 'Conference Paper' },
-    { id: '2', title: 'Deep Residual Learning for Image Recognition', authors: 'He, K. et al.', year: 2016, source: 'Mendeley', type: 'Journal Article' },
-    { id: '3', title: 'BERT: Pre-training of Deep Bidirectional Transformers', authors: 'Devlin, J. et al.', year: 2019, source: 'Zotero', type: 'Preprint' },
+    { id: '1', title: 'Attention is All You Need', authors: 'Vaswani, A. et al.', year: 2017, source: 'OpenAlex', type: 'Conference Paper', link: 'https://arxiv.org/abs/1706.03762' },
+    { id: '2', title: 'Deep Residual Learning for Image Recognition', authors: 'He, K. et al.', year: 2016, source: 'Mendeley', type: 'Journal Article', link: 'https://arxiv.org/abs/1512.03385' },
+    { id: '3', title: 'BERT: Pre-training of Deep Bidirectional Transformers', authors: 'Devlin, J. et al.', year: 2019, source: 'Zotero', type: 'Preprint', link: 'https://arxiv.org/abs/1810.04805' },
   ];
 
   return (
@@ -12,7 +12,7 @@ export default function CitationsPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold text-neutral-900 tracking-tight">Citation Library</h1>
-          <p className="text-neutral-500 mt-1 text-sm sm:text-base">Manage your references across Mendeley, Zotero, and Semantic Scholar.</p>
+          <p className="text-neutral-500 mt-1 text-sm sm:text-base">Manage your references across Mendeley, Zotero, and OpenAlex.</p>
         </div>
         <div className="flex w-full sm:w-auto gap-3">
           <button className="flex-1 sm:flex-none justify-center bg-white border border-neutral-200 text-neutral-700 px-4 py-2.5 rounded-xl font-medium hover:bg-neutral-50 transition-colors shadow-sm flex items-center gap-2 text-sm sm:text-base">
@@ -41,7 +41,7 @@ export default function CitationsPage() {
             <option>All Sources</option>
             <option>Mendeley</option>
             <option>Zotero</option>
-            <option>Semantic Scholar</option>
+            <option>OpenAlex</option>
           </select>
         </div>
       </div>
@@ -56,6 +56,7 @@ export default function CitationsPage() {
                 <th className="px-4 sm:px-6 py-4 font-medium text-neutral-500">Year</th>
                 <th className="px-4 sm:px-6 py-4 font-medium text-neutral-500">Source</th>
                 <th className="px-4 sm:px-6 py-4 font-medium text-neutral-500">Type</th>
+                <th className="px-4 sm:px-6 py-4 font-medium text-neutral-500">Link</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200">
@@ -70,6 +71,13 @@ export default function CitationsPage() {
                     </span>
                   </td>
                   <td className="px-4 sm:px-6 py-4 text-neutral-600">{citation.type}</td>
+                  <td className="px-4 sm:px-6 py-4 text-neutral-600">
+                    {citation.link && (
+                      <a href={citation.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 flex items-center gap-1" title="View Source">
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

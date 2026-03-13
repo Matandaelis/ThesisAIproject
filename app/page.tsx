@@ -58,7 +58,7 @@ export default function LandingPage() {
                 },
                 {
                   title: 'Smart Citations',
-                  description: 'Seamless integration with Semantic Scholar, Mendeley, and Zotero.',
+                  description: 'Seamless integration with OpenAlex, Mendeley, and Zotero.',
                   icon: CheckCircle2,
                 },
                 {
